@@ -13,12 +13,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Show repo files (debug)
+      - name: Show repo files and Dockerfile
+        shell: bash
         run: |
           pwd
           ls -la
-          echo "---- show subdirs ----"
+          echo "------ show exact files tracked by git ------"
+          git ls-files
+          echo "------ show Dockerfile content ------"
+          echo "v-----------------------------------v"
+          cat Dockerfile || true
+          echo "^-----------------------------------^"
+          echo "------ show size of requirements.txt ------"
+          ls -l requirements.txt || true
+          echo "------ show src/components ------"
           ls -la src || true
           ls -la components || true
 
