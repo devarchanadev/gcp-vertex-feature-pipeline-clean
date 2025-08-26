@@ -40,14 +40,16 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Verify gcloud access (read-only)
+      - name: Verify gcloud access (safe)
+        shell: bash
         run: |
           gcloud --version
-          echo "Project: ${GCP_PROJECT_ID}  Region: ${GCP_REGION}"
+          echo "Active account:"
+          gcloud auth list --filter=status:ACTIVE --format="value(account)"
+          echo "Configured project (from env/ctx): ${GCP_PROJECT_ID}"
           gcloud config set project "${GCP_PROJECT_ID}"
-          # list enabled services just to prove auth works (safe read-only)
-          gcloud services list --enabled --format="table(config.name)"
-        shell: bash
+          echo "Print short config to confirm:"
+          gcloud config list --format='text(core.project,core.account)'
 
       # ---- Docker Build (local check only; no push yet) ----
       - name: Set up Docker Buildx
