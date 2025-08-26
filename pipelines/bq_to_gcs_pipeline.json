@@ -1,0 +1,146 @@
+{
+  "components": {
+    "comp-bq-extract": {
+      "executorLabel": "exec-bq-extract",
+      "outputDefinitions": {
+        "parameters": {
+          "output_csv": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-gcs-upload": {
+      "executorLabel": "exec-gcs-upload",
+      "inputDefinitions": {
+        "parameters": {
+          "bucket": {
+            "parameterType": "STRING"
+          },
+          "dest_prefix": {
+            "parameterType": "STRING"
+          },
+          "input_csv": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    }
+  },
+  "deploymentSpec": {
+    "executors": {
+      "exec-bq-extract": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "bq_extract"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.9.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef bq_extract(output_csv: dsl.OutputPath(str)):\n    \"\"\"\n    Query a tiny public table to stay in the free tier and write a small CSV.\n    \"\"\"\n    from google.cloud import bigquery\n    import pandas as pd\n\n    client = bigquery.Client()\n    sql = \"\"\"\n    SELECT name, gender, state, year, number\n    FROM `bigquery-public-data.usa_names.usa_1910_current`\n    WHERE year BETWEEN 2015 AND 2016\n    LIMIT 200\n    \"\"\"\n    df = client.query(sql).result().to_dataframe(create_bqstorage_client=False)\n    df.to_csv(output_csv, index=False)\n    print(f\"Wrote local artifact CSV at: {output_csv}\")\n\n"
+          ],
+          "image": "us-central1-docker.pkg.dev/powerful-balm-466923-f4/vertex-feature-docker/vertex-feature:latest"
+        }
+      },
+      "exec-gcs-upload": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "gcs_upload"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.9.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef gcs_upload(input_csv: dsl.InputPath(str), bucket: str, dest_prefix: str) -> str:\n    \"\"\"\n    Upload the CSV artifact to GCS at gs://{bucket}/{dest_prefix}/names_sample.csv\n    Returns the full gs:// path.\n    \"\"\"\n    from google.cloud import storage\n    import os\n\n    client = storage.Client()\n    bucket_obj = client.bucket(bucket)\n    blob_name = f\"{dest_prefix.rstrip('/')}/names_sample.csv\"\n    blob = bucket_obj.blob(blob_name)\n    blob.upload_from_filename(input_csv)\n\n    uri = f\"gs://{bucket}/{blob_name}\"\n    print(f\"Uploaded to: {uri}\")\n    return uri\n\n"
+          ],
+          "image": "us-central1-docker.pkg.dev/powerful-balm-466923-f4/vertex-feature-docker/vertex-feature:latest"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "description": "Minimal BigQuery -> CSV -> GCS pipeline.\n- bucket: your target GCS bucket name (no gs://)\n- dest_prefix: folder/prefix within the bucket",
+    "name": "bq-to-gcs-features"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "bq-extract": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-bq-extract"
+          },
+          "taskInfo": {
+            "name": "bq-extract"
+          }
+        },
+        "gcs-upload": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-gcs-upload"
+          },
+          "dependentTasks": [
+            "bq-extract"
+          ],
+          "inputs": {
+            "parameters": {
+              "bucket": {
+                "componentInputParameter": "bucket"
+              },
+              "dest_prefix": {
+                "componentInputParameter": "dest_prefix"
+              },
+              "input_csv": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "output_csv",
+                  "producerTask": "bq-extract"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "gcs-upload"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "bucket": {
+          "parameterType": "STRING"
+        },
+        "dest_prefix": {
+          "defaultValue": "features/usa_names_sample",
+          "isOptional": true,
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.9.0"
+}
