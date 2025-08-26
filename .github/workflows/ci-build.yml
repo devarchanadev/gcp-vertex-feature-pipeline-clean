@@ -14,12 +14,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show repo files (debug)
+        run: |
+          pwd
+          ls -la
+          echo "---- show subdirs ----"
+          ls -la src || true
+          ls -la components || true
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build (no push)
+      - name: Build (no push) with explicit file/context
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
           push: false
           tags: local/vertex-feature:ci
