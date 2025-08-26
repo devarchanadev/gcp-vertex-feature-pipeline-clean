@@ -35,7 +35,15 @@ jobs:
       # ---- Configure Docker to use gcloud as a credential helper ----
       - name: Configure Docker auth for Artifact Registry
         run: |
-          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+          gcloud auth configure-docker "${{ env.GCP_REGION }}-docker.pkg.dev" --quiet
+        shell: bash
+
+      # (Optional) quick debug to confirm envs
+      - name: Show env values (masked in logs)
+        run: |
+          echo "Project: ${{ env.GCP_PROJECT_ID }}"
+          echo "Region:  ${{ env.GCP_REGION }}"
+          echo "Repo:    ${{ env.AR_REPO }}"
         shell: bash
 
       # ---- Build and Push Docker Image ----
@@ -46,4 +54,4 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/vertex-feature:latest
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/`${{ env.AR_REPO }}`/vertex-feature:latest
