@@ -1,0 +1,90 @@
+name: Run Vertex Pipeline (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dest_prefix:
+        description: "GCS prefix (folder) to write features under"
+        required: true
+        default: "features/test"
+      pipeline_spec_gcs:
+        description: "GCS path to pipeline JSON"
+        required: true
+        default: "gs://${{ vars.GCS_BUCKET }}/pipelines/bq_to_gcs_pipeline.json"
+      run_name:
+        description: "Display name for the run"
+        required: true
+        default: "bq-to-gcs-run-manual"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCS_BUCKET: ${{ vars.GCS_BUCKET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- Auth to Google Cloud using service account key ----
+      - name: Auth with service account
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Vertex SDK
+        run: |
+          python -m pip install --upgrade pip
+          pip install "google-cloud-aiplatform>=1.49.0"
+
+      - name: Submit Pipeline Run
+        env:
+          RUN_NAME: ${{ github.event.inputs.run_name }}
+          PIPELINE_SPEC_GCS: ${{ github.event.inputs.pipeline_spec_gcs }}
+          DEST_PREFIX: ${{ github.event.inputs.dest_prefix }}
+        run: |
+          python - << 'PY'
+          import os
+          from google.cloud import aiplatform
+
+          project = os.environ["GCP_PROJECT_ID"]
+          region  = os.environ["GCP_REGION"]
+          bucket  = os.environ["GCS_BUCKET"]
+
+          run_name = os.environ["RUN_NAME"]
+          spec_gcs = os.environ["PIPELINE_SPEC_GCS"]
+          dest_prefix = os.environ["DEST_PREFIX"]
+
+          # same service account you created earlier
+          sa_email = f"vertex-feature-sa@{project}.iam.gserviceaccount.com"
+
+          pipeline_root = f"gs://{bucket}/pipeline-root/"
+          params = {
+              "bucket": bucket,
+              "dest_prefix": dest_prefix,
+          }
+
+          aiplatform.init(project=project, location=region, staging_bucket=pipeline_root)
+          job = aiplatform.PipelineJob(
+              display_name=run_name,
+              template_path=spec_gcs,
+              pipeline_root=pipeline_root,
+              parameter_values=params,
+              enable_caching=False,  # force fresh run
+          )
+          job.run(service_account=sa_email, sync=False)
+
+          print("Submitted PipelineJob:", job.resource_name)
+          # Print a direct URL the user can click
+          run_id = job.resource_name.split("/")[-1]
+          print("Open run:", f"https://console.cloud.google.com/vertex-ai/locations/{region}/pipelines/runs/{run_id}?project={project}")
+          PY
