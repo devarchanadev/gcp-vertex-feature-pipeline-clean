@@ -7,10 +7,6 @@ on:
         description: "GCS prefix (folder) to write features under"
         required: true
         default: "features/test"
-      pipeline_spec_gcs:
-        description: "GCS path to pipeline JSON"
-        required: true
-        default: "gs://${{ vars.GCS_BUCKET }}/pipelines/bq_to_gcs_pipeline.json"
       run_name:
         description: "Display name for the run"
         required: true
@@ -48,7 +44,6 @@ jobs:
       - name: Submit Pipeline Run
         env:
           RUN_NAME: ${{ github.event.inputs.run_name }}
-          PIPELINE_SPEC_GCS: ${{ github.event.inputs.pipeline_spec_gcs }}
           DEST_PREFIX: ${{ github.event.inputs.dest_prefix }}
         run: |
           python - << 'PY'
@@ -59,13 +54,13 @@ jobs:
           region  = os.environ["GCP_REGION"]
           bucket  = os.environ["GCS_BUCKET"]
 
-          run_name = os.environ["RUN_NAME"]
-          spec_gcs = os.environ["PIPELINE_SPEC_GCS"]
+          run_name    = os.environ["RUN_NAME"]
           dest_prefix = os.environ["DEST_PREFIX"]
 
-          sa_email = f"vertex-feature-sa@{project}.iam.gserviceaccount.com"
+          sa_email      = f"vertex-feature-sa@{project}.iam.gserviceaccount.com"
           pipeline_root = f"gs://{bucket}/pipeline-root/"
-          params = {"bucket": bucket, "dest_prefix": dest_prefix}
+          spec_gcs      = f"gs://{bucket}/pipelines/bq_to_gcs_pipeline.json"
+          params        = {"bucket": bucket, "dest_prefix": dest_prefix}
 
           aiplatform.init(project=project, location=region, staging_bucket=pipeline_root)
           job = aiplatform.PipelineJob(
