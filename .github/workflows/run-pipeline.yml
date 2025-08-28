@@ -30,7 +30,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---- Auth to Google Cloud using service account key ----
       - name: Auth with service account
         uses: google-github-actions/auth@v2
         with:
@@ -64,14 +63,9 @@ jobs:
           spec_gcs = os.environ["PIPELINE_SPEC_GCS"]
           dest_prefix = os.environ["DEST_PREFIX"]
 
-          # same service account you created earlier
           sa_email = f"vertex-feature-sa@{project}.iam.gserviceaccount.com"
-
           pipeline_root = f"gs://{bucket}/pipeline-root/"
-          params = {
-              "bucket": bucket,
-              "dest_prefix": dest_prefix,
-          }
+          params = {"bucket": bucket, "dest_prefix": dest_prefix}
 
           aiplatform.init(project=project, location=region, staging_bucket=pipeline_root)
           job = aiplatform.PipelineJob(
@@ -79,12 +73,11 @@ jobs:
               template_path=spec_gcs,
               pipeline_root=pipeline_root,
               parameter_values=params,
-              enable_caching=False,  # force fresh run
+              enable_caching=False,
           )
           job.run(service_account=sa_email, sync=False)
 
           print("Submitted PipelineJob:", job.resource_name)
-          # Print a direct URL the user can click
           run_id = job.resource_name.split("/")[-1]
           print("Open run:", f"https://console.cloud.google.com/vertex-ai/locations/{region}/pipelines/runs/{run_id}?project={project}")
           PY
