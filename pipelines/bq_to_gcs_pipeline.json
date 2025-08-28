@@ -3,9 +3,12 @@
     "comp-bq-extract": {
       "executorLabel": "exec-bq-extract",
       "outputDefinitions": {
-        "parameters": {
+        "artifacts": {
           "output_csv": {
-            "parameterType": "STRING"
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
           }
         }
       }
@@ -13,14 +16,19 @@
     "comp-gcs-upload": {
       "executorLabel": "exec-gcs-upload",
       "inputDefinitions": {
+        "artifacts": {
+          "input_csv": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
         "parameters": {
           "bucket": {
             "parameterType": "STRING"
           },
           "dest_prefix": {
-            "parameterType": "STRING"
-          },
-          "input_csv": {
             "parameterType": "STRING"
           }
         }
@@ -51,7 +59,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef bq_extract(output_csv: dsl.OutputPath(str)):\n    \"\"\"\n    Query a tiny public table to stay in the free tier and write a small CSV.\n    Forces the job to run in your GCP project and the US multi-region\n    (the usa_names public dataset is stored in US).\n    \"\"\"\n    from google.cloud import bigquery\n    import pandas as pd\n\n    PROJECT_ID = \"powerful-balm-466923-f4\"  # your project ID\n    LOCATION = \"US\"                         # dataset location for usa_names\n\n    client = bigquery.Client(project=PROJECT_ID)\n\n    sql = \"\"\"\n    SELECT name, gender, state, year, number\n    FROM `bigquery-public-data.usa_names.usa_1910_current`\n    WHERE year BETWEEN 2015 AND 2016\n    LIMIT 200\n    \"\"\"\n\n    # Ensure the query runs in the correct location and your project\n    job = client.query(sql, location=LOCATION)\n    df = job.result().to_dataframe(create_bqstorage_client=False)\n\n    df.to_csv(output_csv, index=False)\n    print(f\"Wrote local artifact CSV at: {output_csv}\")\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef bq_extract(output_csv: Output[Dataset]):\n    \"\"\"\n    Query a tiny public table (free) and write a small CSV artifact.\n    Forces the job to run in your GCP project and the US multi-region.\n    \"\"\"\n    from google.cloud import bigquery\n    import pandas as pd\n\n    PROJECT_ID = \"powerful-balm-466923-f4\"  # your project ID\n    LOCATION = \"US\"                         # usa_names dataset is in US\n\n    client = bigquery.Client(project=PROJECT_ID)\n    sql = \"\"\"\n    SELECT name, gender, state, year, number\n    FROM `bigquery-public-data.usa_names.usa_1910_current`\n    WHERE year BETWEEN 2015 AND 2016\n    LIMIT 200\n    \"\"\"\n    job = client.query(sql, location=LOCATION)\n    df = job.result().to_dataframe(create_bqstorage_client=False)\n\n    # Write the artifact file\n    df.to_csv(output_csv.path, index=False)\n    # Optional metadata\n    output_csv.metadata[\"format\"] = \"csv\"\n    output_csv.metadata[\"rows\"] = len(df)\n    print(f\"Wrote CSV artifact at: {output_csv.path}\")\n\n"
           ],
           "image": "us-central1-docker.pkg.dev/powerful-balm-466923-f4/vertex-feature-docker/vertex-feature:latest"
         }
@@ -71,7 +79,7 @@
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef gcs_upload(input_csv: dsl.InputPath(str), bucket: str, dest_prefix: str) -> str:\n    \"\"\"\n    Upload the CSV artifact to GCS at gs://{bucket}/{dest_prefix}/names_sample.csv\n    Returns the full gs:// path.\n    \"\"\"\n    from google.cloud import storage\n    import os\n\n    client = storage.Client()\n    bucket_obj = client.bucket(bucket)\n    blob_name = f\"{dest_prefix.rstrip('/')}/names_sample.csv\"\n    blob = bucket_obj.blob(blob_name)\n    blob.upload_from_filename(input_csv)\n\n    uri = f\"gs://{bucket}/{blob_name}\"\n    print(f\"Uploaded to: {uri}\")\n    return uri\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef gcs_upload(input_csv: Input[Dataset], bucket: str, dest_prefix: str) -> str:\n    \"\"\"\n    Upload the CSV artifact to GCS at gs://{bucket}/{dest_prefix}/names_sample.csv\n    Returns the full gs:// path as the output parameter.\n    \"\"\"\n    from google.cloud import storage\n\n    client = storage.Client()\n    bucket_obj = client.bucket(bucket)\n    blob_name = f\"{dest_prefix.rstrip('/')}/names_sample.csv\"\n    blob = bucket_obj.blob(blob_name)\n\n    # input_csv.path is a local file path created by KFP\n    blob.upload_from_filename(input_csv.path)\n\n    uri = f\"gs://{bucket}/{blob_name}\"\n    print(f\"Uploaded to: {uri}\")\n    return uri\n\n"
           ],
           "image": "us-central1-docker.pkg.dev/powerful-balm-466923-f4/vertex-feature-docker/vertex-feature:latest"
         }
@@ -107,18 +115,20 @@
             "bq-extract"
           ],
           "inputs": {
+            "artifacts": {
+              "input_csv": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "output_csv",
+                  "producerTask": "bq-extract"
+                }
+              }
+            },
             "parameters": {
               "bucket": {
                 "componentInputParameter": "bucket"
               },
               "dest_prefix": {
                 "componentInputParameter": "dest_prefix"
-              },
-              "input_csv": {
-                "taskOutputParameter": {
-                  "outputParameterKey": "output_csv",
-                  "producerTask": "bq-extract"
-                }
               }
             }
           },

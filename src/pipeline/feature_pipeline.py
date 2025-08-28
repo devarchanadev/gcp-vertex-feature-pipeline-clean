@@ -16,4 +16,3 @@ def bq_to_gcs_pipeline(bucket: str, dest_prefix: str = "features/usa_names_sampl
         bucket=bucket,
         dest_prefix=dest_prefix
     )
-    # Optionally, you can print or use upload_task.output (the gs:// URI) downstream
