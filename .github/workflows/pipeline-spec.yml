@@ -1,0 +1,64 @@
+name: CI - Compile & Upload Pipeline Spec
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCS_BUCKET: ${{ vars.GCS_BUCKET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # --- Python to compile KFP pipeline locally on runner ---
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install compiler deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install kfp==2.9.0
+
+      - name: Compile pipeline JSON
+        run: |
+          python - << 'PY'
+          from kfp import compiler
+          from src.pipeline.feature_pipeline import bq_to_gcs_pipeline
+          compiler.Compiler().compile(
+              pipeline_func=bq_to_gcs_pipeline,
+              package_path="pipelines/bq_to_gcs_pipeline.json"
+          )
+          print("Compiled -> pipelines/bq_to_gcs_pipeline.json")
+          PY
+
+      - name: Show compiled file
+        run: ls -l pipelines
+
+      # --- Auth to GCP & upload to GCS bucket ---
+      - name: Auth with service account
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: '>= 471.0.0'
+
+      - name: Upload pipeline spec to GCS
+        run: |
+          gsutil cp -n pipelines/bq_to_gcs_pipeline.json gs://${GCS_BUCKET}/pipelines/
+          echo "Uploaded to: gs://${GCS_BUCKET}/pipelines/bq_to_gcs_pipeline.json"
