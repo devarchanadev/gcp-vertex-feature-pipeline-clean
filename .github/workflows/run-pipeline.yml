@@ -36,10 +36,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Vertex SDK
+      - name: Install Vertex SDK (with pipelines extras)
         run: |
           python -m pip install --upgrade pip
-          pip install "google-cloud-aiplatform>=1.49.0"
+          pip install "google-cloud-aiplatform[pipelines]>=1.49.0"
 
       - name: Submit Pipeline Run
         env:
@@ -57,10 +57,15 @@ jobs:
           run_name    = os.environ["RUN_NAME"]
           dest_prefix = os.environ["DEST_PREFIX"]
 
+          # Service account used by Vertex Pipelines runtime
           sa_email      = f"vertex-feature-sa@{project}.iam.gserviceaccount.com"
           pipeline_root = f"gs://{bucket}/pipeline-root/"
           spec_gcs      = f"gs://{bucket}/pipelines/bq_to_gcs_pipeline.json"
-          params        = {"bucket": bucket, "dest_prefix": dest_prefix}
+
+          params = {
+              "bucket": bucket,
+              "dest_prefix": dest_prefix,
+          }
 
           aiplatform.init(project=project, location=region, staging_bucket=pipeline_root)
           job = aiplatform.PipelineJob(
@@ -68,7 +73,7 @@ jobs:
               template_path=spec_gcs,
               pipeline_root=pipeline_root,
               parameter_values=params,
-              enable_caching=False,
+              enable_caching=False,  # force fresh execution
           )
           job.run(service_account=sa_email, sync=False)
 
